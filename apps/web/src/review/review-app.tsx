@@ -533,6 +533,15 @@ function ArtifactReview({
   const [selectedPath, setSelectedPath] = useState<string | null>(
     initialLocation.path,
   );
+  // An address with an artifact and no `version` follows that artifact's
+  // current version; choosing a version, an artifact or a project pins it.
+  const [followLatest, setFollowLatest] = useState(
+    initialLocation.artifactId !== null && initialLocation.versionId === null,
+  );
+  const followLatestRef = useRef(followLatest);
+  useEffect(() => {
+    followLatestRef.current = followLatest;
+  }, [followLatest]);
   const [query, setQuery] = useState("");
   const searchQuery = useDeferredValue(query.trim());
   const [catalogCommentFilter, setCatalogCommentFilter] = useState<CatalogCommentFilter>("all");
@@ -609,6 +618,7 @@ function ArtifactReview({
   }, [catalogMotion.width, inspectorMotion.width]);
   const followCommentVersion = useCallback((versionId: string): void => {
     setDetailError(null);
+    setFollowLatest(false);
     setSelectedVersionId(versionId);
     setSelectedPath(null);
   }, []);
@@ -656,6 +666,7 @@ function ArtifactReview({
     getSnapshot: webmcpSnapshot,
     openArtifact: (artifactId, versionId) => {
       setDetailError(null);
+      setFollowLatest(false);
       setSelectedArtifactId(artifactId);
       setSelectedVersionId(versionId);
       setSelectedPath(null);
@@ -829,6 +840,29 @@ function ArtifactReview({
     session.capabilities.linkedArtifacts && details?.sourceBinding !== undefined,
   );
 
+  const refreshFollowedLatest = useCallback(async (): Promise<void> => {
+    if (selectedArtifactId === null || projectId === "") return;
+    try {
+      const latest = await api.artifact(projectId, selectedArtifactId);
+      if (latest.current.version.id === selectedVersionId) return;
+      const loadedVersions = await api.versions(projectId, selectedArtifactId);
+      // A reviewer who pinned a version while the request ran stays pinned.
+      if (!followLatestRef.current) return;
+      setDetails(latest);
+      setVersions(loadedVersions);
+      setDetailError(null);
+      setSelectedPath(null);
+      setSelectedVersionId(latest.current.version.id);
+    } catch {
+      // Following the latest version never replaces the last readable one.
+    }
+  }, [projectId, selectedArtifactId, selectedVersionId]);
+
+  useCommentPoll(
+    refreshFollowedLatest,
+    followLatest && details !== null && selectedVersionId !== null,
+  );
+
   const loadActions = useCallback(async (cursor: string | null): Promise<void> => {
     if (selectedArtifactId === null || projectId === "") return;
     setActivityLoading(true);
@@ -890,12 +924,12 @@ function ArtifactReview({
       artifactId: selectedArtifactId,
       path: selectedPath,
       projectId,
-      versionId: selectedVersionId,
+      versionId: followLatest ? null : selectedVersionId,
       view: focusMode ? "focus" : null,
     });
     window.history.replaceState(null, "", href);
     window.sessionStorage.setItem("artifact-review-return-url", href);
-  }, [focusMode, projectId, selectedArtifactId, selectedPath, selectedVersionId]);
+  }, [focusMode, followLatest, projectId, selectedArtifactId, selectedPath, selectedVersionId]);
 
   useEffect(() => {
     const restoreLocation = (): void => {
@@ -905,6 +939,7 @@ function ArtifactReview({
         setCatalogTagFilters([]);
         setProjectId(restored.projectId);
       }
+      setFollowLatest(restored.artifactId !== null && restored.versionId === null);
       setSelectedArtifactId(restored.artifactId);
       setSelectedVersionId(restored.versionId);
       setSelectedPath(restored.path);
@@ -973,12 +1008,14 @@ function ArtifactReview({
   );
   const selectArtifact = useCallback((artifactId: string, versionId?: string): void => {
     setDetailError(null);
+    setFollowLatest(false);
     setSelectedArtifactId(artifactId);
     setSelectedVersionId(versionId ?? null);
     setSelectedPath(null);
   }, []);
   const selectProject = (nextProjectId: string): void => {
     if (nextProjectId !== projectId) {
+      setFollowLatest(false);
       setCatalogKnownTags([]);
       setCatalogTagFilters([]);
       setSelectedArtifactId(null);
@@ -992,7 +1029,7 @@ function ArtifactReview({
       artifactId: selectedArtifactId,
       path,
       projectId,
-      versionId: selectedVersionId,
+      versionId: followLatest ? null : selectedVersionId,
       view: focusMode ? "focus" : null,
     }));
     setSelectedPath(path);
@@ -1150,25 +1187,25 @@ function ArtifactReview({
       artifactId: selectedArtifactId,
       path: selectedPath,
       projectId,
-      versionId: selectedVersionId,
+      versionId: followLatest ? null : selectedVersionId,
       view: "focus",
     }));
     setFocusCommentsOpen(false);
     setFocusControlsCollapsed(false);
     setFocusMode(true);
-  }, [projectId, selectedArtifactId, selectedPath, selectedVersionId]);
+  }, [followLatest, projectId, selectedArtifactId, selectedPath, selectedVersionId]);
   const exitFocusMode = useCallback((): void => {
     window.history.pushState(null, "", reviewHref({
       artifactId: selectedArtifactId,
       path: selectedPath,
       projectId,
-      versionId: selectedVersionId,
+      versionId: followLatest ? null : selectedVersionId,
       view: null,
     }));
     setFocusCommentsOpen(false);
     setFocusControlsCollapsed(false);
     setFocusMode(false);
-  }, [projectId, selectedArtifactId, selectedPath, selectedVersionId]);
+  }, [followLatest, projectId, selectedArtifactId, selectedPath, selectedVersionId]);
   useEffect(() => {
     const handleReviewShortcut = (event: KeyboardEvent): void => {
       if (homeOpen || reviewShortcutBlocked(event)) return;
@@ -2019,6 +2056,7 @@ function ArtifactReview({
                 onMakeCurrent={makeVersionCurrent}
                 onSelect={(versionId) => {
                   setDetailError(null);
+                  setFollowLatest(false);
                   setSelectedVersionId(versionId);
                   setSelectedPath(null);
                 }}

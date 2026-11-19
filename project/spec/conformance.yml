@@ -979,6 +979,20 @@ requirements:
         run: project/evidence/local-foundation.json
         recorded_at: "2026-08-17T03:17:21.421Z"
 
+  - id: VER-002
+    kind: behavior
+    behavior: A review address that names an artifact and no version opens the current version and follows it while the page is open; an address that names a version never moves, and choosing a version, an artifact, or a project pins the page to that choice.
+    owner: web-application
+    source: {file: artifact-server-product-spec.html, anchor: experience}
+    acceptance:
+      behavior: {id: VER-002-B, description: "Open the review address with no version, publish a new version, and observe the page switch to it without a reload while the address still names no version."}
+      failure: {id: VER-002-F, description: "Open an exact-version review address, or pick an earlier version while following, publish a new version, and confirm the page stays on that version and its address keeps naming it."}
+    deployments: *all
+    status: implementing
+    proof_gap: The browser test proves the follow, the exact-version address, and a picked version on the local deployment; it does not run on the other deployments or cover a version published while the tab is in the background.
+    depends_on: [VER-001, PUB-013]
+    evidence: []
+
   - id: DIF-001
     kind: behavior
     behavior: Comparisons use canonical manifests and do not require Git.
